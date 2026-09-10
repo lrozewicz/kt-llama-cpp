@@ -432,8 +432,8 @@ static bool test_seq_file_integrity(
             model->hparams.n_ff_arr[0] + 1, "per-layer FFN shape") ||
         !require_family_mutation(model->hparams.n_expert,
             model->hparams.n_expert + 1, "expert count") ||
-        !require_family_mutation(model->hparams.n_expert_used,
-            model->hparams.n_expert_used + 1, "selected expert count") ||
+        !require_family_mutation(model->hparams.n_expert_used_arr[0],
+            model->hparams.n_expert_used_arr[0] + 1, "selected expert count") ||
         !require_family_mutation(model->hparams.n_expert_shared,
             model->hparams.n_expert_shared + 1, "shared expert topology") ||
         !require_family_mutation(model->hparams.n_expert_groups,

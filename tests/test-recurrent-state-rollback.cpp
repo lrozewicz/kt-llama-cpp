@@ -21,6 +21,10 @@
 #include <string>
 #include <vector>
 
+static float logit_diff(float a, float b) {
+    return std::isfinite(a) && std::isfinite(b) ? std::fabs(a - b) : std::numeric_limits<float>::infinity();
+}
+
 static llama_context_ptr make_ctx(const common_params & params, llama_model * model, uint32_t n_seq_max = 1) {
     auto cparams = common_context_params_to_llama(params);
     cparams.n_seq_max = n_seq_max;
