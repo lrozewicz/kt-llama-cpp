@@ -377,6 +377,7 @@ static __global__ void flash_attn_ext_vec(
                 KQ_k[j] = __half2half2(KQ[j*nthreads + k]);
             }
 
+#ifdef GGML_CUDA_FATTN_SPARSE_V
             // Sparse V: skip V dequant for negligible attention weights (TheTom, sparse-v-dequant)
             {
                 bool dominated = true;
@@ -386,6 +387,7 @@ static __global__ void flash_attn_ext_vec(
                 }
                 if (dominated) { continue; }
             }
+#endif // GGML_CUDA_FATTN_SPARSE_V
 
 #pragma unroll
             for (int i_VKQ_0 = 0; i_VKQ_0 < D/2; i_VKQ_0 += nthreads_V*V_rows_per_thread/2) {
@@ -423,6 +425,7 @@ static __global__ void flash_attn_ext_vec(
                 KQ_k[j] = KQ[j*nthreads + k];
             }
 
+#ifdef GGML_CUDA_FATTN_SPARSE_V
             // Sparse V: skip V dequant for negligible attention weights (TheTom, sparse-v-dequant)
             {
                 bool dominated = true;
@@ -432,6 +435,7 @@ static __global__ void flash_attn_ext_vec(
                 }
                 if (dominated) { continue; }
             }
+#endif // GGML_CUDA_FATTN_SPARSE_V
 
 #pragma unroll
             for (int i_VKQ_0 = 0; i_VKQ_0 < D/2; i_VKQ_0 += nthreads_V*V_rows_per_thread/2) {
