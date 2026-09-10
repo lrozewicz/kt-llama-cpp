@@ -1658,7 +1658,11 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, 
     // Perf-only, NVIDIA-Ada-only, so it never touches Ampere/Volta/Blackwell/AMD, which keep the
     // upstream-tuned J=128 rows.
     int J_cap = GGML_CUDA_MMQ_MAX_J;
-    if (GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_ADA_LOVELACE) {
+    // Measured on RTX 4070 Ti Super (sm_89): the J=64 cap makes IQ2_XXS/IQ2_S/IQ3_XXS/IQ3_S/Q3_K
+    // MMQ 21-31% slower than upstream's J=128 tiles (test-backend-ops perf, m=4096 n=512 k=14336),
+    // costing ~12% of end-to-end prefill. Keep it opt-in via GGML_CUDA_MMQ_ADA_JCAP=1.
+    static const bool ada_jcap = getenv("GGML_CUDA_MMQ_ADA_JCAP") != nullptr && atoi(getenv("GGML_CUDA_MMQ_ADA_JCAP")) != 0;
+    if (ada_jcap && GGML_CUDA_CC_IS_NVIDIA(cc) && cc >= GGML_CUDA_CC_ADA_LOVELACE) {
         switch (type) {
             case GGML_TYPE_IQ2_XXS:
             case GGML_TYPE_IQ2_S:
