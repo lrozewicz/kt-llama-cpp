@@ -5740,3 +5740,89 @@ bool ggml_validate_row_data(enum ggml_type type, const void * data, size_t nbyte
 
     return true;
 }
+
+// ============================ ik_llama.cpp types: iq4_ks, iq4_kss, iq2_kt, iq3_kt (dequantization only)
+// Reference: ik_llama.cpp (MIT, Iwan Kawrakow). The CUDA kernels (convert.cu/mmq/mmvq) define the numerics;
+// these CPU versions replicate them exactly (including the 1.05f / 1.01f trellis scale factors).
+
+static inline int ggml_trellis_next_int(uint32_t * val) {
+    const uint32_t ka = 0xCBAC1FED;
+    *val *= ka;
+    const uint32_t v = *val & 0x3f3f3f3fu;
+    return (int) ((v & 0xff) + ((v >> 8) & 0xff) + ((v >> 16) & 0xff) + ((v >> 24) & 0xff)) - 126;
+}
+
+void ggml_dequantize_block_iq4_ks(float d, const block_iq4_ks * GGML_RESTRICT x, float * GGML_RESTRICT y) {
+    const uint8_t * qs = x->qs;
+    for (int ib = 0; ib < QK_K/32; ++ib) {
+        const float dl = d * ((int)(x->scales[ib] & 254) - 127);
+        const int8_t * values = iq4k_values + ((x->scales[ib] & 1) << 4);
+        for (int j = 0; j < 16; ++j) {
+            y[j   ] = dl * values[qs[j] & 0xf];
+            y[j+16] = dl * values[qs[j] >>  4];
+        }
+        y  += 32;
+        qs += 16;
+    }
+}
+
+void ggml_dequantize_block_iq4_kss(float d, const block_iq4_kss * GGML_RESTRICT x, float * GGML_RESTRICT y) {
+    const uint16_t * qs = (const uint16_t *) x->qs;
+    uint16_t aux16[8];
+    const uint8_t * aux8 = (const uint8_t *) aux16;
+    for (int ib = 0; ib < QK_K/32; ++ib) {
+        int16_t ls = 0;
+        for (int k = 0; k < 8; ++k) {
+            aux16[k] = qs[k] & 0xfffe;
+            aux16[k] ^= (aux16[k] >> 1);
+            ls |= (qs[k] & 1) << k;
+        }
+        const int8_t * values = iq4k_values + ((ls & 1) << 4);
+        const float dl = d * ((ls & 254) - 127);
+        for (int j = 0; j < 16; ++j) {
+            y[j   ] = dl * values[aux8[j] & 0xf];
+            y[j+16] = dl * values[aux8[j] >>  4];
+        }
+        y  += 32;
+        qs += 8;
+    }
+}
+
+void ggml_dequantize_block_iq2_kt(float d, const block_iq2_kt * GGML_RESTRICT x, float * GGML_RESTRICT y) {
+    const uint16_t * ql = (const uint16_t *) x->ql;
+    for (int ib = 0; ib < QK_K/8; ++ib) { // 32 groups of 8 values
+        uint32_t idx = ql[ib] + 4096;
+        const float dl = d * iq4k_values[(x->scales[(ib/4)%4] >> 4*(ib/16)) & 0xf] * 1.05f;
+        for (int j = 0; j < 8; ++j) {
+            y[8*ib + j] = dl * ggml_trellis_next_int(&idx);
+        }
+    }
+}
+
+void ggml_dequantize_block_iq3_kt(float d, const block_iq3_kt * GGML_RESTRICT x, float * GGML_RESTRICT y) {
+    const uint16_t * ql = (const uint16_t *) x->ql;
+    for (int ib = 0; ib < QK_K/8; ++ib) {
+        uint32_t idx = ql[ib] + 4096;
+        const float dl = d * ((x->scales[(ib/4)%4] >> 4*(ib/16)) & 0xf) * 1.01f;
+        const uint8_t mask = 1 << (ib/4);
+        for (int j = 0; j < 8; ++j) {
+            const int v = ggml_trellis_next_int(&idx);
+            y[8*ib + j] = dl * (v < 0 ? -v : v) * (x->qh[(8*ib + j) % 32] & mask ? -1.f : 1.f);
+        }
+    }
+}
+
+#define GGML_KT_DEQUANT_ROW(name, block_t)                                                               \
+    void dequantize_row_##name(const block_t * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {    \
+        assert(k % QK_K == 0);                                                                           \
+        const float d = *(const float *) x;                                                              \
+        const block_t * xb = (const block_t *) ((const float *) x + 1);                                  \
+        for (int64_t ib = 0; ib < k/QK_K; ++ib) {                                                        \
+            ggml_dequantize_block_##name(d, xb + ib, y + ib*QK_K);                                       \
+        }                                                                                                \
+    }
+GGML_KT_DEQUANT_ROW(iq4_ks,  block_iq4_ks)
+GGML_KT_DEQUANT_ROW(iq4_kss, block_iq4_kss)
+GGML_KT_DEQUANT_ROW(iq2_kt,  block_iq2_kt)
+GGML_KT_DEQUANT_ROW(iq3_kt,  block_iq3_kt)
+#undef GGML_KT_DEQUANT_ROW

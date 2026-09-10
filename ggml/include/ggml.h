@@ -443,7 +443,13 @@ extern "C" {
         GGML_TYPE_TURBO1_CQ = 51, // RESERVED (codec removed 2026-07-05)
         GGML_TYPE_TURBO1_TCQ = 52, // turbo1 Trellis-Coded: FWHT + k=1/L=8 trellis, separate K/V 256-state codebooks (1.25 bpw)
         GGML_TYPE_Q2_0_G128 = 53, // 2-bit ternary weight quant, group-128 (PrismML Bonsai; on-disk type-42 remapped here at load)
-        GGML_TYPE_COUNT   = 54,
+        // ik_llama.cpp quant types. Numeric ids match ik's on-disk GGUF ids so files are interchangeable.
+        // Rows of these types start with a 4-byte float row scale (see ggml_row_meta_size()).
+        GGML_TYPE_IQ4_KS  = 144,
+        GGML_TYPE_IQ4_KSS = 146,
+        GGML_TYPE_IQ2_KT  = 153,
+        GGML_TYPE_IQ3_KT  = 154,
+        GGML_TYPE_COUNT   = 155,
     };
 
     // [TAG_GGML_PREC]
@@ -779,7 +785,8 @@ extern "C" {
 
     GGML_API int64_t ggml_blck_size(enum ggml_type type);
     GGML_API size_t  ggml_type_size(enum ggml_type type);             // size in bytes for all elements in a block
-    GGML_API size_t  ggml_row_size (enum ggml_type type, int64_t ne); // size in bytes for all elements in a row
+    GGML_API size_t  ggml_row_size (enum ggml_type type, int64_t ne);
+    GGML_API size_t  ggml_row_meta_size(enum ggml_type type); // bytes of per-row header before the first block (0 for most types)
 
     GGML_DEPRECATED(
     GGML_API double ggml_type_sizef(enum ggml_type type), // ggml_type_size()/ggml_blck_size() as float

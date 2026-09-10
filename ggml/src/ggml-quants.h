@@ -75,6 +75,17 @@ GGML_API void dequantize_row_iq1_s  (const block_iq1_s   * GGML_RESTRICT x, floa
 GGML_API void dequantize_row_iq1_m  (const block_iq1_m   * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
 GGML_API void dequantize_row_iq4_nl (const block_iq4_nl  * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
 GGML_API void dequantize_row_iq4_xs (const block_iq4_xs  * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+
+// ik_llama.cpp types: x points at the row start (float row scale followed by blocks)
+GGML_API void dequantize_row_iq4_ks (const block_iq4_ks  * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+GGML_API void dequantize_row_iq4_kss(const block_iq4_kss * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+GGML_API void dequantize_row_iq2_kt (const block_iq2_kt  * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+GGML_API void dequantize_row_iq3_kt (const block_iq3_kt  * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
+// single-block dequantization (d = row scale), used by the generic CPU vec_dot fallback
+GGML_API void ggml_dequantize_block_iq4_ks (float d, const block_iq4_ks  * GGML_RESTRICT x, float * GGML_RESTRICT y);
+GGML_API void ggml_dequantize_block_iq4_kss(float d, const block_iq4_kss * GGML_RESTRICT x, float * GGML_RESTRICT y);
+GGML_API void ggml_dequantize_block_iq2_kt (float d, const block_iq2_kt  * GGML_RESTRICT x, float * GGML_RESTRICT y);
+GGML_API void ggml_dequantize_block_iq3_kt (float d, const block_iq3_kt  * GGML_RESTRICT x, float * GGML_RESTRICT y);
 GGML_API void dequantize_row_iq3_s  (const block_iq3_s   * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k);
 
 // Quantization utilizing an importance matrix (a.k.a. "Activation aWare Quantization")

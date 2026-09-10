@@ -1420,3 +1420,127 @@ static __device__ __forceinline__ float vec_dot_iq4_xs_q8_1(
     const float d = __half2float(bq4->d) * __low2float(bq8_1[iqs/4].ds);
     return d * sumi;
 }
+
+// ---------------------------------------------------------------------------------------------
+// ik_llama.cpp types (MIT, Iwan Kawrakow). vbq points at the ROW start (float row scale + blocks), kbx is the block
+// index within the row and iqs/4 the 32-value sub-block; used by the row-meta path of mul_mat_vec_q.
+
+static __device__ __forceinline__ int ggml_cuda_trellis_next_int(uint32_t & val) {
+    constexpr uint32_t ka = 0xCBAC1FED;
+    val = ka*val;
+    return ggml_cuda_dp4a(val & 0x3f3f3f3f, 0x01010101, -126);
+}
+
+static __device__ __forceinline__ float vec_dot_iq4_ks_q8_1(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+    const float scale = *(const float *) vbq;
+    const block_iq4_ks * bq4 = (const block_iq4_ks *)((const char *) vbq + sizeof(float)) + kbx;
+    const int ib32 = iqs/4;
+    const int    * q8 = (const int *) bq8_1[ib32].qs;
+    const uint32_t * q4 = (const uint32_t *) bq4->qs + 4*ib32;
+    const float dl = scale * ((bq4->scales[ib32] & 254) - 127);
+    const int8_t * values = iq4k_values + ((bq4->scales[ib32] & 1) << 4);
+    int sumi = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        const int2 v = get_int_from_table_16(q4[j], values);
+        sumi = ggml_cuda_dp4a(v.x, q8[j+0], sumi);
+        sumi = ggml_cuda_dp4a(v.y, q8[j+4], sumi);
+    }
+    return dl * __low2float(bq8_1[ib32].ds) * sumi;
+}
+
+static __device__ __forceinline__ float vec_dot_iq4_kss_q8_1(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+    const float scale = *(const float *) vbq;
+    const block_iq4_kss * bq4 = (const block_iq4_kss *)((const char *) vbq + sizeof(float)) + kbx;
+    const int ib32 = iqs/4;
+    const int    * q8 = (const int *) bq8_1[ib32].qs;
+    const uint32_t * q4 = (const uint32_t *) bq4->qs + 4*ib32;
+    const uint32_t s32 = (q4[0] & 0x00010001) | ((q4[1] & 0x00010001) << 2) | ((q4[2] & 0x00010001) << 4) | ((q4[3] & 0x00010001) << 6);
+    const uint8_t ls = (s32 | (s32 >> 15)) & 0xff;
+    const float dl = scale * ((ls & 254) - 127);
+    const int8_t * values = iq4k_values + ((ls & 1) << 4);
+    int sumi = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        uint32_t aux32 = q4[j] & 0xfffefffe;
+        aux32 ^= (aux32 >> 1);
+        const int2 v = get_int_from_table_16(aux32, values);
+        sumi = ggml_cuda_dp4a(v.x, q8[j+0], sumi);
+        sumi = ggml_cuda_dp4a(v.y, q8[j+4], sumi);
+    }
+    return dl * __low2float(bq8_1[ib32].ds) * sumi;
+}
+
+static __device__ __forceinline__ float vec_dot_iq2_kt_q8_1(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+    constexpr uint32_t ka = 0xCBAC1FED;
+    constexpr uint32_t km = 0x3f3f3f3f;
+    const float scale = *(const float *) vbq;
+    const block_iq2_kt * bq2 = (const block_iq2_kt *)((const char *) vbq + sizeof(float)) + kbx;
+    const int ib32 = iqs/4;
+    const int * q8 = (const int *) bq8_1[ib32].qs;
+    const int ls = iq4k_values[(bq2->scales[ib32%4] >> 4*(ib32/4)) & 0xf];
+    const float dl = scale * ls * 1.05f;
+    const uint16_t * ql = (const uint16_t *) bq2->ql;
+    int sumi = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        uint32_t val = ql[4*ib32+j] + 4096;
+        int v4 = 0;
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v4 |= (ggml_cuda_dp4a(val & km, 0x01010101, -126) & 0xff) << 8*k;
+        }
+        sumi = ggml_cuda_dp4a(v4, q8[2*j+0], sumi);
+        v4 = 0;
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v4 |= (ggml_cuda_dp4a(val & km, 0x01010101, -126) & 0xff) << 8*k;
+        }
+        sumi = ggml_cuda_dp4a(v4, q8[2*j+1], sumi);
+    }
+    return dl * __low2float(bq8_1[ib32].ds) * sumi;
+}
+
+static __device__ __forceinline__ float vec_dot_iq3_kt_q8_1(
+    const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs) {
+    constexpr uint32_t ka = 0xCBAC1FED;
+    constexpr uint32_t km = 0x3f3f3f3f;
+    const float scale = *(const float *) vbq;
+    const block_iq3_kt * bq3 = (const block_iq3_kt *)((const char *) vbq + sizeof(float)) + kbx;
+    const int ib32 = iqs/4;
+    const int * q8 = (const int *) bq8_1[ib32].qs;
+    const int ls = (bq3->scales[ib32%4] >> 4*(ib32/4)) & 0xf;
+    const float dl = scale * ls * 1.01f; // ik uses 1.01f in MMQ/dequant and 1.015f in its mmvq; we keep one constant
+    const uint16_t * ql = (const uint16_t *) bq3->ql;
+    const uint32_t * qh = (const uint32_t *) bq3->qh;
+    const uint32_t mask = 0x01010101 << ib32;
+    int sumi = 0;
+#pragma unroll
+    for (int j = 0; j < 4; ++j) {
+        uint32_t val = ql[4*ib32+j] + 4096;
+        int v4 = 0;
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v4 |= abs(ggml_cuda_dp4a(val & km, 0x01010101, -126)) << 8*k;
+        }
+        uint32_t signs = __vcmpne4(qh[2*j+0] & mask, 0);
+        v4 = __vsub4(v4 ^ signs, signs);
+        sumi = ggml_cuda_dp4a(v4, q8[2*j+0], sumi);
+        v4 = 0;
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v4 |= abs(ggml_cuda_dp4a(val & km, 0x01010101, -126)) << 8*k;
+        }
+        signs = __vcmpne4(qh[2*j+1] & mask, 0);
+        v4 = __vsub4(v4 ^ signs, signs);
+        sumi = ggml_cuda_dp4a(v4, q8[2*j+1], sumi);
+    }
+    return dl * __low2float(bq8_1[ib32].ds) * sumi;
+}

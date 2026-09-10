@@ -1882,3 +1882,228 @@ template <ggml_type type, int J, bool fallback> static __device__ __forceinline_
         x_u32_scale[i*sram_stride] = get_int_b4(bxi->d, 0);
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// ik_llama.cpp types (MIT, Iwan Kawrakow). Rows are (float scale + blocks), so the block-linear index kbx0 handed in by
+// mul_mat_q is decoded as row = kbx0/stride, block = kbx0%stride (stride = blocks per row; the host limits these
+// types to 2D src0). SRAM layout is the same as IQ4_XS (Q8_0 layout, one float scale per 32 values).
+
+#define GGML_CUDA_MMQ_KT_PROLOGUE(block_t)                                                                           \
+    constexpr int warp_size   = ggml_cuda_get_physical_warp_size();                                                  \
+    constexpr int nwarps      = ggml_cuda_mmq_get_nthreads(type, J, fallback) / warp_size;                           \
+    constexpr int I           = ggml_cuda_mmq_get_I(type, J, fallback);                                              \
+    [[maybe_unused]] constexpr int sram_stride = ggml_cuda_mmq_get_sram_stride(type, J, fallback);                   \
+    const int    row_base  = kbx0 / stride;                                                                          \
+    const int    kb        = kbx0 - row_base*stride;                                                                 \
+    const size_t row_bytes = sizeof(float) + (size_t) stride * sizeof(block_t);
+
+#if defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+#define GGML_CUDA_MMQ_KT_TILES(dummy_type)                                    \
+    int   * x_qs = (int   *)  x_tile;                                         \
+    float * x_df = (float *) (x_qs + MMQ_TILE_NE_K*2);
+#define GGML_CUDA_MMQ_KT_QS(i, k)  x_qs[(i)*sram_stride + (k)]
+#define GGML_CUDA_MMQ_KT_DF(i, k)  x_df[(i)*sram_stride + (k)]
+#else
+#define GGML_CUDA_MMQ_KT_TILES(dummy_type)                                    \
+    constexpr tile_x_sizes txs = mmq_get_dp4a_tile_x_sizes(GGML_TYPE_IQ4_XS, I); \
+    int   * x_qs = (int   *)  x_tile;                                         \
+    float * x_df = (float *) (x_qs + txs.qs);
+#define GGML_CUDA_MMQ_KT_QS(i, k)  x_qs[(i)*(2*MMQ_TILE_NE_K + 1) + (k)]
+#define GGML_CUDA_MMQ_KT_DF(i, k)  x_df[(i)*(MMQ_TILE_NE_K/4) + (i)/4 + (k)]
+#endif // defined(AMD_MFMA_AVAILABLE) || defined(TURING_MMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
+
+template <ggml_type type, int J, bool fallback> static __device__ __forceinline__ void ggml_cuda_mmq_load_tiles_iq4_ks(
+        const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
+    GGML_CUDA_MMQ_KT_PROLOGUE(block_iq4_ks)
+    GGML_CUDA_MMQ_KT_TILES(type)
+
+    constexpr int threads_per_row = 8; // one 32-value sub-block per thread
+    constexpr int nrows = warp_size / threads_per_row;
+    const int kqsx = threadIdx.x % threads_per_row;
+
+#pragma unroll
+    for (int i0 = 0; i0 < I; i0 += nrows*nwarps) {
+        int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
+
+        if (fallback) {
+            i = min(i, i_max);
+        }
+
+        const float * dptr = (const float *) (x + (size_t) (row_base + i) * row_bytes);
+        const block_iq4_ks * bxi = (const block_iq4_ks *) (dptr + 1) + kb;
+        const int ls = (bxi->scales[kqsx] & 254) - 127;
+        const int8_t * values = iq4k_values + ((bxi->scales[kqsx] & 1) << 4);
+
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            const int  q4 = get_int_b4(bxi->qs, 4*kqsx + j);
+            const int2 v  = get_int_from_table_16(q4, values);
+            GGML_CUDA_MMQ_KT_QS(i, 8*kqsx + j + 0) = v.x;
+            GGML_CUDA_MMQ_KT_QS(i, 8*kqsx + j + 4) = v.y;
+        }
+        GGML_CUDA_MMQ_KT_DF(i, kqsx) = dptr[0] * ls;
+    }
+}
+
+template <ggml_type type, int J, bool fallback> static __device__ __forceinline__ void ggml_cuda_mmq_load_tiles_iq4_kss(
+        const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
+    GGML_CUDA_MMQ_KT_PROLOGUE(block_iq4_kss)
+    GGML_CUDA_MMQ_KT_TILES(type)
+
+    constexpr int threads_per_row = 8;
+    constexpr int nrows = warp_size / threads_per_row;
+    const int kqsx = threadIdx.x % threads_per_row;
+
+#pragma unroll
+    for (int i0 = 0; i0 < I; i0 += nrows*nwarps) {
+        int i = i0 + threadIdx.y*nrows + threadIdx.x/threads_per_row;
+
+        if (fallback) {
+            i = min(i, i_max);
+        }
+
+        const float * dptr = (const float *) (x + (size_t) (row_base + i) * row_bytes);
+        const block_iq4_kss * bxi = (const block_iq4_kss *) (dptr + 1) + kb;
+        const uint32_t * q4 = bxi->qs + 4*kqsx;
+        const uint32_t s32 = (q4[0] & 0x00010001) | ((q4[1] & 0x00010001) << 2) | ((q4[2] & 0x00010001) << 4) | ((q4[3] & 0x00010001) << 6);
+        const uint8_t ls = (s32 | (s32 >> 15)) & 0xff;
+        const int8_t * values = iq4k_values + ((ls & 1) << 4);
+
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            uint32_t val = q4[j] & 0xfffefffe;
+            val = val ^ (val >> 1);
+            const int2 v = get_int_from_table_16(val, values);
+            GGML_CUDA_MMQ_KT_QS(i, 8*kqsx + j + 0) = v.x;
+            GGML_CUDA_MMQ_KT_QS(i, 8*kqsx + j + 4) = v.y;
+        }
+        GGML_CUDA_MMQ_KT_DF(i, kqsx) = dptr[0] * ((ls & 254) - 127);
+    }
+}
+
+template <ggml_type type, int J, bool fallback> static __device__ __forceinline__ void ggml_cuda_mmq_load_tiles_iq2_kt(
+        const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
+    GGML_CUDA_MMQ_KT_PROLOGUE(block_iq2_kt)
+    GGML_CUDA_MMQ_KT_TILES(type)
+
+    constexpr uint32_t ka = 0xCBAC1FED;
+    constexpr uint32_t km = 0x3f3f3f3f;
+
+    constexpr int threads_per_row = 32; // 8 values (one trellis group) per thread
+    constexpr int nrows = warp_size / threads_per_row;
+    const int kqsx = threadIdx.x % threads_per_row;
+
+#pragma unroll
+    for (int i0 = 0; i0 < I; i0 += nrows*nwarps) {
+        int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
+
+        if (fallback) {
+            i = min(i, i_max);
+        }
+
+        const block_iq2_kt * bxi = (const block_iq2_kt *) (x + (size_t) (row_base + i) * row_bytes + sizeof(float)) + kb;
+
+        const int ib32 = kqsx/4;
+        const int jj   = kqsx%4;
+        const uint16_t * ql = (const uint16_t *) bxi->ql;
+        uint32_t val = ql[4*ib32 + jj] + 4096;
+        int2 v = {0, 0};
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v.x |= (ggml_cuda_dp4a(val & km, 0x01010101, -126) & 0xff) << 8*k;
+        }
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v.y |= (ggml_cuda_dp4a(val & km, 0x01010101, -126) & 0xff) << 8*k;
+        }
+        GGML_CUDA_MMQ_KT_QS(i, 8*ib32 + 2*jj + 0) = v.x;
+        GGML_CUDA_MMQ_KT_QS(i, 8*ib32 + 2*jj + 1) = v.y;
+    }
+
+    constexpr int rows_per_warp = warp_size / 8;
+#pragma unroll
+    for (int i0 = 0; i0 < I; i0 += nwarps * rows_per_warp) {
+        int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / 8;
+
+        if (fallback) {
+            i = min(i, i_max);
+        }
+
+        const float * dptr = (const float *) (x + (size_t) (row_base + i) * row_bytes);
+        const block_iq2_kt * bxi = (const block_iq2_kt *) (dptr + 1) + kb;
+        const int ib32 = threadIdx.x % 8;
+        const int ls = iq4k_values[(bxi->scales[ib32%4] >> 4*(ib32/4)) & 0xf];
+        GGML_CUDA_MMQ_KT_DF(i, ib32) = dptr[0] * 1.05f * ls;
+    }
+}
+
+template <ggml_type type, int J, bool fallback> static __device__ __forceinline__ void ggml_cuda_mmq_load_tiles_iq3_kt(
+        const char * __restrict__ x, int * __restrict__ x_tile, const int kbx0, const int i_max, const int stride) {
+    GGML_CUDA_MMQ_KT_PROLOGUE(block_iq3_kt)
+    GGML_CUDA_MMQ_KT_TILES(type)
+
+    constexpr uint32_t ka = 0xCBAC1FED;
+    constexpr uint32_t km = 0x3f3f3f3f;
+
+    constexpr int threads_per_row = 32;
+    constexpr int nrows = warp_size / threads_per_row;
+    const int kqsx = threadIdx.x % threads_per_row;
+
+#pragma unroll
+    for (int i0 = 0; i0 < I; i0 += nrows*nwarps) {
+        int i = i0 + (nrows == 1 ? threadIdx.y : threadIdx.y*nrows + threadIdx.x/threads_per_row);
+
+        if (fallback) {
+            i = min(i, i_max);
+        }
+
+        const block_iq3_kt * bxi = (const block_iq3_kt *) (x + (size_t) (row_base + i) * row_bytes + sizeof(float)) + kb;
+
+        const int ib32 = kqsx/4;
+        const int jj   = kqsx%4;
+        const uint16_t * ql = (const uint16_t *) bxi->ql;
+        const uint32_t * qh = (const uint32_t *) bxi->qh;
+        const uint32_t mask = 0x01010101 << ib32;
+        uint32_t val = ql[4*ib32 + jj] + 4096;
+        int2 v = {0, 0};
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v.x |= abs(ggml_cuda_dp4a(val & km, 0x01010101, -126)) << 8*k;
+        }
+        uint32_t signs = __vcmpne4(qh[2*jj+0] & mask, 0);
+        v.x = __vsub4(v.x ^ signs, signs);
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            val *= ka;
+            v.y |= abs(ggml_cuda_dp4a(val & km, 0x01010101, -126)) << 8*k;
+        }
+        signs = __vcmpne4(qh[2*jj+1] & mask, 0);
+        v.y = __vsub4(v.y ^ signs, signs);
+        GGML_CUDA_MMQ_KT_QS(i, 8*ib32 + 2*jj + 0) = v.x;
+        GGML_CUDA_MMQ_KT_QS(i, 8*ib32 + 2*jj + 1) = v.y;
+    }
+
+    constexpr int rows_per_warp = warp_size / 8;
+#pragma unroll
+    for (int i0 = 0; i0 < I; i0 += nwarps * rows_per_warp) {
+        int i = i0 + threadIdx.y * rows_per_warp + threadIdx.x / 8;
+
+        if (fallback) {
+            i = min(i, i_max);
+        }
+
+        const float * dptr = (const float *) (x + (size_t) (row_base + i) * row_bytes);
+        const block_iq3_kt * bxi = (const block_iq3_kt *) (dptr + 1) + kb;
+        const int ib32 = threadIdx.x % 8;
+        const int ls = (bxi->scales[ib32%4] >> 4*(ib32/4)) & 0xf;
+        GGML_CUDA_MMQ_KT_DF(i, ib32) = dptr[0] * 1.01f * ls;
+    }
+}
+
+#undef GGML_CUDA_MMQ_KT_PROLOGUE
+#undef GGML_CUDA_MMQ_KT_TILES
+#undef GGML_CUDA_MMQ_KT_QS
+#undef GGML_CUDA_MMQ_KT_DF

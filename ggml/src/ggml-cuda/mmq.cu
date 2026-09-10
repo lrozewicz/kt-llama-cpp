@@ -69,6 +69,18 @@ static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, con
         case GGML_TYPE_IQ4_XS:
             mul_mat_q_case<GGML_TYPE_IQ4_XS>(ctx, args, stream);
             break;
+        case GGML_TYPE_IQ4_KS:
+            mul_mat_q_case<GGML_TYPE_IQ4_KS>(ctx, args, stream);
+            break;
+        case GGML_TYPE_IQ4_KSS:
+            mul_mat_q_case<GGML_TYPE_IQ4_KSS>(ctx, args, stream);
+            break;
+        case GGML_TYPE_IQ2_KT:
+            mul_mat_q_case<GGML_TYPE_IQ2_KT>(ctx, args, stream);
+            break;
+        case GGML_TYPE_IQ3_KT:
+            mul_mat_q_case<GGML_TYPE_IQ3_KT>(ctx, args, stream);
+            break;
         case GGML_TYPE_IQ4_NL:
             mul_mat_q_case<GGML_TYPE_IQ4_NL>(ctx, args, stream);
             break;
@@ -98,6 +110,11 @@ static void ggml_cuda_mul_mat_q_impl(
     GGML_ASSERT(!dst_pair || (ggml_are_same_shape(dst_pair, dst) && ggml_are_same_stride(dst_pair, dst)));
 
     GGML_TENSOR_BINARY_OP_LOCALS;
+
+    if (ggml_row_meta_size(src0->type) > 0) {
+        // ik_llama.cpp types: the tile loaders decode (row, block) from block-linear indices, valid for 2D src0 only
+        GGML_ASSERT(ne02 == 1 && ne03 == 1 && !ids && !src0_pair);
+    }
 
     cudaStream_t stream = ctx.stream();
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
@@ -328,6 +345,11 @@ bool ggml_cuda_should_use_mmq(enum ggml_type type, int cc, int64_t ne11, int64_t
 // -------------------------------------------------
         case GGML_TYPE_MXFP4:
         case GGML_TYPE_NVFP4:
+// ------------------------------------------------- ik_llama.cpp types
+        case GGML_TYPE_IQ4_KS:
+        case GGML_TYPE_IQ4_KSS:
+        case GGML_TYPE_IQ2_KT:
+        case GGML_TYPE_IQ3_KT:
             mmq_supported = true;
             break;
         default:

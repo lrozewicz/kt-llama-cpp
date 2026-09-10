@@ -1177,6 +1177,52 @@ struct ggml_cuda_type_traits<GGML_TYPE_IQ4_XS> {
     static constexpr int bs = sizeof(block_iq4_xs);
 };
 
+// ik_llama.cpp types: same tiling as IQ4_XS (8 sub-blocks of 32 per QK_K block); rows carry a float header.
+template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ4_KS> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR4_XS;
+    static constexpr int qi = QI4_XS;
+    static constexpr int bs = sizeof(block_iq4_ks);
+};
+
+template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ4_KSS> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR4_XS;
+    static constexpr int qi = QI4_XS;
+    static constexpr int bs = sizeof(block_iq4_kss);
+};
+
+template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ2_KT> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR4_XS;
+    static constexpr int qi = QI4_XS;
+    static constexpr int bs = sizeof(block_iq2_kt);
+};
+
+template<>
+struct ggml_cuda_type_traits<GGML_TYPE_IQ3_KT> {
+    static constexpr int qk = QK_K;
+    static constexpr int qr = QR4_XS;
+    static constexpr int qi = QI4_XS;
+    static constexpr int bs = sizeof(block_iq3_kt);
+};
+
+// bytes of per-row header (float row scale) for ik_llama.cpp types, 0 otherwise; mirrors ggml_row_meta_size()
+static constexpr __host__ __device__ int ggml_cuda_get_row_meta(ggml_type type) {
+    return (type == GGML_TYPE_IQ4_KS || type == GGML_TYPE_IQ4_KSS || type == GGML_TYPE_IQ2_KT || type == GGML_TYPE_IQ3_KT) ? 4 : 0;
+}
+
+// block size in bytes for the row-meta types (0 otherwise); avoids requiring ::bs on every type trait
+static constexpr __host__ __device__ int ggml_cuda_get_row_meta_bs(ggml_type type) {
+    return type == GGML_TYPE_IQ4_KS  ? (int) sizeof(block_iq4_ks)  :
+           type == GGML_TYPE_IQ4_KSS ? (int) sizeof(block_iq4_kss) :
+           type == GGML_TYPE_IQ2_KT  ? (int) sizeof(block_iq2_kt)  :
+           type == GGML_TYPE_IQ3_KT  ? (int) sizeof(block_iq3_kt)  : 0;
+}
+
 template<>
 struct ggml_cuda_type_traits<GGML_TYPE_IQ3_S> {
     static constexpr int qk = QK_K;

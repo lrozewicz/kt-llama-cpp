@@ -8,6 +8,7 @@
 #include "ggml-cpu-impl.h"
 #include "ggml-impl.h"
 #include "quants.h"
+#include "ggml-quants.h"
 #include "ggml-threading.h"
 #include "unary-ops.h"
 #include "binary-ops.h"
@@ -214,6 +215,31 @@ typedef pthread_t ggml_thread_t;
 #include <TargetConditionals.h>
 #endif
 
+
+// ik_llama.cpp types: slow generic CPU fallback (dequantize block-wise, dot with f32). Real work happens on CUDA.
+#define GGML_KT_VEC_DOT_F32(name, block_t)                                                                       \
+    static void ggml_vec_dot_##name##_f32(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, \
+            size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {                                      \
+        GGML_UNUSED(bs); GGML_UNUSED(bx); GGML_UNUSED(by); GGML_ASSERT(nrc == 1); assert(n % QK_K == 0);         \
+        const float d = *(const float *) vx;                                                                     \
+        const block_t * x = (const block_t *) ((const float *) vx + 1);                                          \
+        const float * y = (const float *) vy;                                                                    \
+        float buf[QK_K];                                                                                         \
+        float sumf = 0.0f;                                                                                       \
+        for (int ib = 0; ib < n/QK_K; ++ib) {                                                                    \
+            ggml_dequantize_block_##name(d, x + ib, buf);                                                        \
+            for (int j = 0; j < QK_K; ++j) {                                                                     \
+                sumf += buf[j] * y[ib*QK_K + j];                                                                 \
+            }                                                                                                    \
+        }                                                                                                        \
+        *s = sumf;                                                                                               \
+    }
+GGML_KT_VEC_DOT_F32(iq4_ks,  block_iq4_ks)
+GGML_KT_VEC_DOT_F32(iq4_kss, block_iq4_kss)
+GGML_KT_VEC_DOT_F32(iq2_kt,  block_iq2_kt)
+GGML_KT_VEC_DOT_F32(iq3_kt,  block_iq3_kt)
+#undef GGML_KT_VEC_DOT_F32
+
 static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
     [GGML_TYPE_F32] = {
         .from_float               = (ggml_from_float_t) ggml_cpu_fp32_to_fp32,
@@ -243,6 +269,26 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
         .from_float               = quantize_row_q2_0_g128,
         .vec_dot                  = ggml_vec_dot_q2_0_g128_q8_0,
         .vec_dot_type             = GGML_TYPE_Q8_0,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_IQ4_KS] = {
+        .vec_dot                  = ggml_vec_dot_iq4_ks_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_IQ4_KSS] = {
+        .vec_dot                  = ggml_vec_dot_iq4_kss_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_IQ2_KT] = {
+        .vec_dot                  = ggml_vec_dot_iq2_kt_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_IQ3_KT] = {
+        .vec_dot                  = ggml_vec_dot_iq3_kt_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
         .nrows                    = 1,
     },
     [GGML_TYPE_Q4_0] = {
