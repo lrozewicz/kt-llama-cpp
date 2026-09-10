@@ -605,7 +605,7 @@ llm_build_dflash_draft::llm_build_dflash_draft(
             //                       K [head_dim, n_head_kv, n_kv_total]
             //                    mask [n_kv_total, n_tokens, 1, 1]
             cur = build_attn_mha(Qcur, Kcur, Vcur, nullptr, kq_mask, nullptr, nullptr,
-                                 1.0f / sqrtf(float(n_embd_head)), il);
+                                 0, 1.0f / sqrtf(float(n_embd_head)), il);
             cb(cur, "kqv_out", il);
 
             // output projection

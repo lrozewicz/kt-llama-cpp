@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <cstdlib>
 #include <string>
 #include <vector>
 

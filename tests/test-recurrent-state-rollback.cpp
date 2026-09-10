@@ -9,6 +9,9 @@
 #include "llama-ext.h"
 #include "llama.h"
 
+#include "../src/llama-io.h"
+#include "../src/llama-memory.h"
+
 #include <algorithm>
 #include <clocale>
 #include <cmath>
@@ -281,7 +284,7 @@ static bool test_multi_seq_split_replay(const common_params & params, llama_mode
             return false;
         }
         for (int t = 0; t < n_vocab; ++t) {
-            const float diff = std::fabs(l_roll[t] - l_ref[t]);
+            const float diff = logit_diff(l_roll[t], l_ref[t]);
             if (diff > eps && pos_first < 0) {
                 seq_first = i/n_replay;
                 pos_first = p0 + (int32_t) (i%n_replay);
@@ -328,7 +331,7 @@ static bool test_multi_seq_split_replay(const common_params & params, llama_mode
         const float * l_ref  = llama_get_logits_ith(ctx_ref.get(),  0);
         ok = l_roll != nullptr && l_ref != nullptr;
         for (int t = 0; ok && t < n_vocab; ++t) {
-            diff_tail = std::max(diff_tail, std::fabs(l_roll[t] - l_ref[t]));
+            diff_tail = std::max(diff_tail, logit_diff(l_roll[t], l_ref[t]));
         }
     }
 
@@ -886,10 +889,47 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
-    if (!test_multi_seq_split_replay(params, model, n_vocab)) {
+    if (!test_multi_seq_split_replay(params, model, n_vocab, fill)) {
         return 1;
     }
 
     fprintf(stderr, "%s : recurrent rollback-plane validity checks passed\n", __func__);
+    return 0;
+}
+
+int main(int argc, char ** argv) {
+    std::setlocale(LC_NUMERIC, "C");
+
+    common_params params;
+    params.sampling.seed = 1234;
+    params.n_predict = 1;
+
+    common_init();
+
+    if (!common_params_parse(argc, argv, params, LLAMA_EXAMPLE_COMMON)) {
+        return 1;
+    }
+
+    ggml_backend_load_all();
+
+    common_init_result_ptr llama_init = common_init_from_params(params);
+    llama_model * model = llama_init->model();
+    if (model == nullptr) {
+        fprintf(stderr, "%s : failed to init model\n", __func__);
+        return 1;
+    }
+
+    if (!llama_model_is_recurrent(model) && !llama_model_is_hybrid(model)) {
+        fprintf(stderr, "%s : skipping for non-recurrent model\n", __func__);
+        return 0;
+    }
+
+    for (uint8_t fill : { 0, 0x3e }) {
+        fprintf(stderr, "%s : testing with cache fill 0x%02x\n", __func__, fill);
+        if (test_rollback(params, model, fill) != 0) {
+            return 1;
+        }
+    }
+
     return 0;
 }

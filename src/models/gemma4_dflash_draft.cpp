@@ -510,7 +510,7 @@ llm_build_gemma4_dflash_draft::llm_build_gemma4_dflash_draft(
 
             // z-lab drafter is Qwen3-arch: standard softmax scale = 1/sqrt(head_dim), not gemma's 1.0
             cur = build_attn_mha(Qcur, Kcur, Vcur, nullptr, kq_mask, nullptr, nullptr,
-                                 1.0f/sqrtf((float) hparams.n_embd_head_k(il)), il);
+                                 0, 1.0f/sqrtf((float) hparams.n_embd_head_k(il)), il);
             cb(cur, "kqv_out", il);
 
             cur = build_lora_mm(model.layers[il].wo, cur);
