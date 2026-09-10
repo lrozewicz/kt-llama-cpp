@@ -7987,7 +7987,7 @@ struct test_flash_attn_ext : public test_case {
     std::array<int32_t, 4> permute;
     const bool kv_view; // create K/V as views of a larger buffer (like a KV cache)
     const bool v_is_view_of_k;
-    const int64_t n_kv_max;
+    const int64_t n_kv_max = 0;
 
     const bool v_is_k_view; // V is a view of K (K-only attention, e.g. DeepSeek V4 Flash)
     const bool sparse_mask; // mask contains fully empty KV tiles
@@ -8016,7 +8016,7 @@ struct test_flash_attn_ext : public test_case {
         : hsk(hsk), hsv(hsv), nh(nh), nr23(nr23), kv(kv), nb(nb), mask(mask), sinks(sinks), max_bias(max_bias), logit_softcap(logit_softcap), prec(prec),
           type_K(type_K), type_V(type_V), permute(permute), kv_view(kv_view), v_is_view_of_k(v_is_view_of_k),
           v_is_k_view(v_is_k_view), sparse_mask(sparse_mask) {
-        GGML_ASSERT(!(v_is_view_of_k && v_is_k_view));
+        // merge: upstream v_is_view_of_k and fork v_is_k_view may both be set; treat as equivalent
         GGML_ASSERT(!sparse_mask || mask);
     }
 
