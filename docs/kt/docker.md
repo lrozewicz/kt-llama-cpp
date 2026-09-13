@@ -63,7 +63,7 @@ smaller profile by hand if you often do. Speeds and quality checks for each prof
 | `LORA` | `0` | `1` loads the EoRA r64 adapter; `auto` then asks for about 300 MiB more on 16 GB profiles |
 | `PORT` | `8080` | server port inside the container |
 | `ALIAS` | `qwen3.8-27b-ktopt` | model id reported by the API |
-| `KT_MODEL_REPO` | the published model repository | Hugging Face repository with `Qwen3.8-27B-KTopt.gguf` |
+| `KT_MODEL_REPO` | `wiklif/Qwen3.8-27B-KTopt-GGUF` | Hugging Face repository with `Qwen3.8-27B-KTopt.gguf` |
 | `HF_TOKEN` | unset | token for gated or private repositories |
 | `GPU_INDEX` | `0` | GPU whose free memory `auto` reads |
 

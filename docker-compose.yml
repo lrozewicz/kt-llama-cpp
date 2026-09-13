@@ -9,7 +9,7 @@ services:
     environment:
       PROFILE: auto              # auto | 200k | 160k | 160k-t4 | 262k | 96k | 64k | 32k | custom
       LORA: "0"                  # 1 = load the EoRA r64 adapter (about 0.3 GB more GPU memory)
-      # KT_MODEL_REPO: <hf-user>/Qwen3.8-27B-KTopt-GGUF
+      # KT_MODEL_REPO: wiklif/Qwen3.8-27B-KTopt-GGUF   # default
       # HF_TOKEN: hf_...
     deploy:
       resources:

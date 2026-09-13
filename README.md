@@ -75,11 +75,12 @@ Blackwell. Only 89 and 120 have been tested.
 
 ### 2. Download the model
 
-- **Qwen3.8-27B-KTopt-GGUF**: [Hugging Face — link coming soon](https://huggingface.co/) <!-- TODO: replace with the model repo URL -->.
+- **Qwen3.8-27B-KTopt-GGUF** on [Hugging Face](https://huggingface.co/wiklif/Qwen3.8-27B-KTopt-GGUF).
   It contains `Qwen3.8-27B-KTopt.gguf` (10.3 GB) and the optional adapter `Qwen3.8-27B-KTopt-eora-output-r64.gguf` (32 MB).
 - **DFlash2 drafter** (705 MB), for the long-context profiles:
 
 ```bash
+hf download wiklif/Qwen3.8-27B-KTopt-GGUF --local-dir models
 hf download analogalok/Qwen3.8-27B-DFlash2-Q2_K-GGUF --local-dir models
 ```
 

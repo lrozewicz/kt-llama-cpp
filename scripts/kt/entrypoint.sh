@@ -5,7 +5,7 @@ set -euo pipefail
 
 MODELS_DIR=${MODELS_DIR:-/models}; PORT=${PORT:-8080}; HOST=${HOST:-0.0.0.0}
 PROFILE=${PROFILE:-auto}; LORA=${LORA:-0}; ALIAS=${ALIAS:-qwen3.8-27b-ktopt}
-KT_MODEL_REPO=${KT_MODEL_REPO:-TODO/Qwen3.8-27B-KTopt-GGUF}   # TODO: set to the published model repo
+KT_MODEL_REPO=${KT_MODEL_REPO:-wiklif/Qwen3.8-27B-KTopt-GGUF}
 KT_MODEL_FILE=${KT_MODEL_FILE:-Qwen3.8-27B-KTopt.gguf}
 KT_LORA_FILE=${KT_LORA_FILE:-Qwen3.8-27B-KTopt-eora-output-r64.gguf}
 DRAFT_REPO=${DRAFT_REPO:-analogalok/Qwen3.8-27B-DFlash2-Q2_K-GGUF}
