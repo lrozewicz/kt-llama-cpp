@@ -42,7 +42,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=cuda,enable={{is_default_branch}}
+            type=raw,value=cuda,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=cuda-
             type=ref,event=tag,prefix=cuda-
 
