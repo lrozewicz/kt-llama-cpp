@@ -1,0 +1,24 @@
+# kt-llama.cpp: Qwen3.8-27B-KTopt server. Needs the NVIDIA Container Toolkit. See docs/kt/docker.md.
+services:
+  kt-llama:
+    image: ghcr.io/lrozewicz/kt-llama-cpp:cuda
+    ports:
+      - "8080:8080"
+    volumes:
+      - kt-models:/models        # model files are downloaded here on first start (about 11 GB)
+    environment:
+      PROFILE: auto              # auto | 200k | 160k | 160k-t4 | 262k | 96k | 64k | 32k | custom
+      LORA: "0"                  # 1 = load the EoRA r64 adapter (about 0.3 GB more GPU memory)
+      # KT_MODEL_REPO: <hf-user>/Qwen3.8-27B-KTopt-GGUF
+      # HF_TOKEN: hf_...
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  kt-models:

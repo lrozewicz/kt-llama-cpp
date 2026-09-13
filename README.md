@@ -50,6 +50,15 @@ Polish needle-in-a-haystack at five depths: 5/5 at 185k and 5/5 at 250k.
 
 ## Quick start
 
+### Docker (easiest)
+
+```bash
+docker run --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
+```
+
+The container downloads the model on first start and picks a context size that fits your GPU. Requirements and
+settings: [Docker](docs/kt/docker.md). To build from source instead, follow the steps below.
+
 ### 1. Build (Linux, CUDA)
 
 ```bash
@@ -99,6 +108,7 @@ curl and for the Oh My Pi coding agent are in [Running and tuning](docs/kt/runni
 
 | page | what it covers |
 |---|---|
+| [Docker](docs/kt/docker.md) | the container image, automatic profile selection, settings, building it yourself |
 | [Running and tuning](docs/kt/running.md) | every profile with measured memory and speed, the flags that matter, 12 GB GPUs, clients, troubleshooting |
 | [Benchmarks](docs/kt/benchmarks.md) | methodology, results at 64k, 128k and 200k output budgets, paired statistics, comparison with the Qwen card |
 | [The KTopt model](docs/kt/quantization.md) | the quantization recipe and how it was found, KL-divergence tables, the EoRA adapter, how to reproduce it |
