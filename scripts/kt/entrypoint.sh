@@ -34,15 +34,16 @@ FREE=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits -i "${GP
 FREE=${FREE:-0}
 
 if [ "$PROFILE" = auto ]; then
-    # Thresholds = measured peak of the profile + ~480 MiB the driver keeps + ~200 MiB margin (docs/kt/docker.md).
+    # nvidia-smi "free" already excludes the driver reserve. Threshold = measured peak of the profile + ~250 MiB
+    # (a 200 MiB safety margin plus the gap between the reserve and the point where allocations start to fail).
     ADJ16=0; ADJ12=0
     [ "$LORA" = 1 ] && ADJ16=300 && ADJ12=50
-    if   [ "$FREE" -ge $((15600 + ADJ16)) ]; then PROFILE=200k
-    elif [ "$FREE" -ge $((14950 + ADJ16)) ]; then PROFILE=160k
-    elif [ "$FREE" -ge $((11900 + ADJ12)) ]; then PROFILE=96k
-    elif [ "$FREE" -ge $((11450 + ADJ12)) ]; then PROFILE=64k
-    elif [ "$FREE" -ge $((11050 + ADJ12)) ]; then PROFILE=32k
-    else log "only ${FREE} MiB of GPU memory is free; at least about 11 GB is needed."; exit 1; fi
+    if   [ "$FREE" -ge $((15150 + ADJ16)) ]; then PROFILE=200k
+    elif [ "$FREE" -ge $((14500 + ADJ16)) ]; then PROFILE=160k
+    elif [ "$FREE" -ge $((11450 + ADJ12)) ]; then PROFILE=96k
+    elif [ "$FREE" -ge $((11000 + ADJ12)) ]; then PROFILE=64k
+    elif [ "$FREE" -ge $((10600 + ADJ12)) ]; then PROFILE=32k
+    else log "only ${FREE} MiB of GPU memory is free; at least about 10.6 GB is needed."; exit 1; fi
     log "free GPU memory ${FREE} MiB -> profile ${PROFILE}"
 fi
 

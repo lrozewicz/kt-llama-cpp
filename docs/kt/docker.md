@@ -10,7 +10,7 @@ entrypoint that downloads the model on first start and picks a measured profile 
 - Linux, or Windows with WSL2 and Docker Desktop's GPU support.
 - NVIDIA driver 570 or newer (the image uses CUDA 12.8).
 - The [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-- About 11 GB of free GPU memory, and 11 GB of disk for the model files.
+- About 10.6 GB of free GPU memory, and 11 GB of disk for the model files.
 
 ## Run
 
@@ -37,16 +37,16 @@ With Compose: `docker compose up -d` using the [docker-compose.yml](../../docker
 ## Profiles
 
 `PROFILE=auto` (the default) reads the free GPU memory when the container starts and picks the largest profile
-that fits. Each threshold is the measured peak of the profile plus about 480 MiB that the driver keeps and a
-200 MiB margin.
+that fits. The free memory reported by `nvidia-smi` already excludes the driver reserve; each threshold is the
+measured peak of the profile plus about 250 MiB of margin.
 
 | profile | context | cache | drafter | picked by `auto` when free GPU memory is at least |
 |---|---|---|---|---|
-| `200k` | 200,000 | t3 | yes | 15,600 MiB (a 16 GB card with a light desktop) |
-| `160k` | 163,840 | t3 | yes | 14,950 MiB |
-| `96k` | 98,304 | t2 | no | 11,900 MiB (a 12 GB card) |
-| `64k` | 65,536 | t2 | no | 11,450 MiB |
-| `32k` | 32,768 | t2 | no | 11,050 MiB |
+| `200k` | 200,000 | t3 | yes | 15,150 MiB (a 16 GB card with a light desktop) |
+| `160k` | 163,840 | t3 | yes | 14,500 MiB (a 16 GB card with a browser and an IDE open) |
+| `96k` | 98,304 | t2 | no | 11,450 MiB (a 12 GB card) |
+| `64k` | 65,536 | t2 | no | 11,000 MiB |
+| `32k` | 32,768 | t2 | no | 10,600 MiB |
 | `160k-t4` | 172,032 | t4 | yes | manual only |
 | `262k` | 262,144 | t2 | yes | manual only |
 | `custom` | `CTX` | `TIER` | `DRAFT` | manual only |
