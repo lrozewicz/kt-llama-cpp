@@ -15,7 +15,8 @@ entrypoint that downloads the model on first start and picks a measured profile 
 ## Run
 
 ```bash
-docker run --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
+docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
+docker logs -f kt-llama      # follow the first start
 ```
 
 On first start the container downloads `Qwen3.8-27B-KTopt.gguf` (10.3 GB) and, for the long-context profiles, the
@@ -26,7 +27,7 @@ ready when `curl http://127.0.0.1:8080/health` returns `{"status":"ok"}`, and sp
 To use files you already have, mount them instead of the volume:
 
 ```bash
-docker run --gpus all -p 8080:8080 \
+docker run -d --name kt-llama --gpus all -p 8080:8080 \
   -v /path/to/Qwen3.8-27B-KTopt.gguf:/models/Qwen3.8-27B-KTopt.gguf:ro \
   -v /path/to/Qwen3.8-27B-DFlash2-Q2_K.gguf:/models/Qwen3.8-27B-DFlash2-Q2_K.gguf:ro \
   ghcr.io/lrozewicz/kt-llama-cpp:cuda

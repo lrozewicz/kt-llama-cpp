@@ -50,60 +50,172 @@ Polish needle-in-a-haystack at five depths: 5/5 at 185k and 5/5 at 250k.
 
 ## Quick start
 
-### Docker (easiest)
+**What you need**
+
+- Linux, or Windows with WSL2.
+- An NVIDIA GPU with at least 12 GB of memory; 16 GB for 160k context or more.
+- NVIDIA driver 570 or newer.
+- About 12 GB of free disk space.
+
+The model uses quantization types that mainline llama.cpp, LM Studio and Ollama cannot load. Run it with the
+kt-llama.cpp engine: as a ready Docker image (option A) or built from source (option B).
+
+### Option A: Docker (recommended)
+
+**1. Install Docker and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).**
+Check that containers can see your GPU; the command should print a table with your card:
 
 ```bash
-docker run --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
+docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 ```
 
-The container downloads the model on first start and picks a context size that fits your GPU. Requirements and
-settings: [Docker](docs/kt/docker.md). To build from source instead, follow the steps below.
-
-### 1. Build (Linux, CUDA)
+**2. Start the server:**
 
 ```bash
-git clone -b main https://github.com/lrozewicz/kt-llama-cpp
+docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
+```
+
+**3. Wait until it is ready.** The first start downloads about 11 GB (the model and the DFlash2 drafter) into the
+`kt-models` Docker volume; later starts reuse the files. Follow the progress with `docker logs -f kt-llama`. The line
+`[kt] free GPU memory ... -> profile 160k` shows the context size that was chosen. The server is ready when this
+command prints `{"status":"ok"}`:
+
+```bash
+curl http://127.0.0.1:8080/health
+```
+
+**4. Stop it and start it again later:**
+
+```bash
+docker stop kt-llama
+docker start kt-llama
+```
+
+The context size is chosen from the GPU memory that is free when the container starts:
+
+| your GPU | chosen automatically | to choose it yourself, add to step 2 |
+|---|---|---|
+| 16 GB, light desktop (under about 0.8 GB of GPU memory in use) | 200k | `-e PROFILE=200k` |
+| 16 GB, browser and IDE open | 160k | `-e PROFILE=160k` |
+| 12 GB | 96k, 64k or 32k, without the drafter | `-e PROFILE=96k` |
+| 16 GB, full native window, light desktop | never chosen automatically | `-e PROFILE=262k` |
+
+To change it later, remove the container with `docker rm -f kt-llama` and run step 2 again with the `-e` option; the
+downloaded files stay in the volume. If port 8080 is taken, use `-p 8081:8080` and port 8081 in the URLs below.
+All settings are in [the Docker guide](docs/kt/docker.md).
+
+### Option B: build from source
+
+**1. Build the engine.** You need the CUDA toolkit (12.8 or newer for RTX 50xx and RTX PRO Blackwell), CMake and a C++
+compiler. Set `CMAKE_CUDA_ARCHITECTURES` to 86 for RTX 30xx, 89 for RTX 40xx or 120 for RTX 50xx and RTX PRO Blackwell.
+
+```bash
+git clone https://github.com/lrozewicz/kt-llama-cpp
 cd kt-llama-cpp
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_NATIVE=OFF \
-  -DCMAKE_CUDA_ARCHITECTURES="89;120" \
+  -DCMAKE_CUDA_ARCHITECTURES=89 \
   "-DGGML_CUDA_FA_QUANTS=q4_0-q4_0;q8_0-q8_0;f16-f16;bf16-bf16"
 cmake --build build --config Release -j --target llama-server
 ```
 
-Set `CMAKE_CUDA_ARCHITECTURES` for your GPU: 86 for RTX 30xx, 89 for RTX 40xx, 120 for RTX 50xx and RTX PRO
-Blackwell. Only 89 and 120 have been tested.
-
-### 2. Download the model
-
-- **Qwen3.8-27B-KTopt-GGUF** on [Hugging Face](https://huggingface.co/wiklif/Qwen3.8-27B-KTopt-GGUF).
-  It contains `Qwen3.8-27B-KTopt.gguf` (10.3 GB) and the optional adapter `Qwen3.8-27B-KTopt-eora-output-r64.gguf` (32 MB).
-- **DFlash2 drafter** (705 MB), for the long-context profiles:
+**2. Download the model and the drafter.** The `hf` command comes with `pip install -U huggingface_hub`.
 
 ```bash
-hf download wiklif/Qwen3.8-27B-KTopt-GGUF --local-dir models
-hf download analogalok/Qwen3.8-27B-DFlash2-Q2_K-GGUF --local-dir models
+hf download wiklif/Qwen3.8-27B-KTopt-GGUF Qwen3.8-27B-KTopt.gguf --local-dir models
+hf download analogalok/Qwen3.8-27B-DFlash2-Q2_K-GGUF Qwen3.8-27B-DFlash2-Q2_K.gguf --local-dir models
 ```
 
-### 3. Run
+**3. Start the server.** On a 16 GB GPU, 160k context (works with a browser and an IDE open):
 
 ```bash
 VBR_VRAM_HEADROOM_MIB=256 build/bin/llama-server \
-  -m models/Qwen3.8-27B-KTopt.gguf -c 200000 \
-  -ctk vbr --vbr-budget t3 -ctxcp 2 -np 1 -ngl 99 -ub 256 -b 1024 -fa on \
+  -m models/Qwen3.8-27B-KTopt.gguf -c 163840 -ctk vbr --vbr-budget t3 \
   -md models/Qwen3.8-27B-DFlash2-Q2_K.gguf -cd 0 -ctkd q4_0 -ctvd q4_0 --spec-draft-n-max 2 \
-  --jinja --reasoning-format deepseek --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0 \
-  --host 127.0.0.1 --port 8080
+  -ctxcp 2 -np 1 -ngl 99 -ub 256 -b 1024 -fa on \
+  --jinja --reasoning-format deepseek --alias qwen3.8-27b-ktopt \
+  --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0 --host 127.0.0.1 --port 8080
 ```
 
-The 200k profile needs a light desktop, using at most about 0.6 GB of GPU memory. With a browser and an IDE
-open, use `-c 163840`. The other profiles (t4 at 160k, t2 at 262k, 12 GB GPUs, the EoRA adapter) are described
-in [Running and tuning](docs/kt/running.md).
+With a light desktop you can use `-c 200000` for 200k, or `-c 262144 --vbr-budget t2` for the full 262k.
 
-### 4. Connect
+On a 12 GB GPU, 96k context without the drafter:
 
-The server speaks the OpenAI API at `http://127.0.0.1:8080/v1`. The Qwen3.8 chat template takes a
-`reasoning_effort` of `low`, `medium` or `xhigh` (the default) through `chat_template_kwargs`. Examples for
-curl and for the Oh My Pi coding agent are in [Running and tuning](docs/kt/running.md#clients).
+```bash
+VBR_VRAM_HEADROOM_MIB=256 build/bin/llama-server \
+  -m models/Qwen3.8-27B-KTopt.gguf -c 98304 -ctk vbr --vbr-budget t2 \
+  -ctxcp 2 -np 1 -ngl 99 -ub 256 -b 1024 -fa on \
+  --jinja --reasoning-format deepseek --alias qwen3.8-27b-ktopt \
+  --temp 1.0 --top-p 0.95 --top-k 20 --min-p 0 --host 127.0.0.1 --port 8080
+```
+
+**4. Check that it is ready.** Loading takes about 30 seconds; then `curl http://127.0.0.1:8080/health` prints
+`{"status":"ok"}`. Flags, other profiles and troubleshooting: [Running and tuning](docs/kt/running.md).
+
+### Test the API from Python
+
+The server speaks the OpenAI Chat Completions API at `http://127.0.0.1:8080/v1`. The model id is `qwen3.8-27b-ktopt`, and
+the sampling settings recommended by Qwen are already set on the server.
+
+**A simple request**, with `pip install requests`:
+
+```python
+import requests
+
+BASE_URL = "http://127.0.0.1:8080/v1"
+
+resp = requests.post(
+    f"{BASE_URL}/chat/completions",
+    json={
+        "model": "qwen3.8-27b-ktopt",
+        "messages": [{"role": "user", "content": "Write a Python function that checks whether a number is prime."}],
+        "max_tokens": 4096,
+        "chat_template_kwargs": {"reasoning_effort": "low"},  # low | medium | xhigh
+    },
+    timeout=600,
+)
+resp.raise_for_status()
+message = resp.json()["choices"][0]["message"]
+print("--- reasoning ---")
+print(message.get("reasoning_content", ""))
+print("--- answer ---")
+print(message["content"])
+```
+
+**Streaming with the official OpenAI client**, with `pip install openai`:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="not-needed")
+
+stream = client.chat.completions.create(
+    model="qwen3.8-27b-ktopt",
+    messages=[{"role": "user", "content": "Explain in three sentences what a KV cache is."}],
+    max_tokens=4096,
+    stream=True,
+    extra_body={"chat_template_kwargs": {"reasoning_effort": "low"}},
+)
+
+answering = False
+for chunk in stream:
+    if not chunk.choices:
+        continue
+    delta = chunk.choices[0].delta
+    thinking = getattr(delta, "reasoning_content", None)
+    if thinking:
+        print(thinking, end="", flush=True)      # the model's reasoning comes first
+    if delta.content:
+        if not answering:
+            print("\n--- answer ---")
+            answering = True
+        print(delta.content, end="", flush=True)
+print()
+```
+
+- `reasoning_effort` sets how long the model thinks: `low` (fastest), `medium`, or `xhigh` (the default, used in the
+  benchmarks). Any other value returns HTTP 500.
+- The thinking arrives in `reasoning_content`, separately from the answer in `content`.
+- Long answers can take minutes, so keep the timeout generous.
 
 ## Documentation
 
