@@ -20,7 +20,10 @@ docker logs -f kt-llama      # follow the first start
 ```
 
 On first start the container downloads `Qwen3.8-27B-KTopt.gguf` (10.3 GB) and, for the long-context profiles, the
-DFlash2 drafter (705 MB) into the `kt-models` volume, one file at a time. Later starts reuse them. The server is
+DFlash2 drafter (705 MB) into the `kt-models` volume, one file at a time, and logs a progress line every 10 seconds
+(size, percent, speed and time left). Until the download ends, every request on the server port, `/health`
+included, gets HTTP 503 with the same progress in `error.message` and in the status line, so a client shows why
+the server is not ready yet. Later starts reuse the files. The server is
 ready when `curl http://127.0.0.1:8080/health` returns `{"status":"ok"}`, and speaks the OpenAI API at
 `http://127.0.0.1:8080/v1` with the model id `qwen3.8-27b-ktopt`.
 

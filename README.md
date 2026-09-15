@@ -76,9 +76,12 @@ docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.
 ```
 
 **3. Wait until it is ready.** The first start downloads about 11 GB (the model and the DFlash2 drafter) into the
-`kt-models` Docker volume; later starts reuse the files. Follow the progress with `docker logs -f kt-llama`. The line
-`[kt] free GPU memory ... -> profile 160k` shows the context size that was chosen. The server is ready when this
-command prints `{"status":"ok"}`:
+`kt-models` Docker volume; later starts reuse the files. Follow the progress with `docker logs -f kt-llama`; during
+the download it prints a line every 10 seconds, such as
+`[kt] Qwen3.8-27B-KTopt.gguf: 5.83 of 10.30 GB (56%), 10.6 MB/s, about 7 min left`. Ctrl+C stops following the log,
+not the server. The line `[kt] free GPU memory ... -> profile 160k` shows the context size that was chosen. Until the
+server is up, every request to port 8080 gets HTTP 503 with the reason: the download progress, then `Loading model`
+for about 30 seconds. It is ready when this command prints `{"status":"ok"}`:
 
 ```bash
 curl http://127.0.0.1:8080/health

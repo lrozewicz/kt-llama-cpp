@@ -26,10 +26,12 @@ LABEL org.opencontainers.image.title="kt-llama.cpp" \
       org.opencontainers.image.source="https://github.com/lrozewicz/kt-llama-cpp" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision=$APP_REVISION
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libssl3 curl ca-certificates \
+# socat serves the download progress on the server port until llama-server starts (scripts/kt/status-http.sh).
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 libssl3 curl ca-certificates socat \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/ /app/
 COPY scripts/kt/entrypoint.sh /app/kt-entrypoint.sh
+COPY scripts/kt/status-http.sh /app/kt-status-http.sh
 ENV LD_LIBRARY_PATH=/app NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     MODELS_DIR=/models PORT=8080 HOST=0.0.0.0 PROFILE=auto LORA=0
 VOLUME /models
