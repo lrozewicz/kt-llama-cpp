@@ -15,8 +15,17 @@ entrypoint that downloads the model on first start and picks a measured profile 
 ## Run
 
 ```bash
-docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
-docker logs -f kt-llama      # follow the first start
+docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda && docker logs -f kt-llama
+```
+
+`docker logs -f` follows the first start; Ctrl+C stops following the log, not the server.
+
+To get the newest image, for example after an update or if you ran it before, remove the old container and start it
+with `--pull always`; without it `docker run` reuses the cached image. The model files stay in the volume:
+
+```bash
+docker rm -f kt-llama
+docker run -d --pull always --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda && docker logs -f kt-llama
 ```
 
 On first start the container downloads `Qwen3.8-27B-KTopt.gguf` (10.3 GB) and, for the long-context profiles, the
@@ -36,7 +45,8 @@ docker run -d --name kt-llama --gpus all -p 8080:8080 \
   ghcr.io/lrozewicz/kt-llama-cpp:cuda
 ```
 
-With Compose: `docker compose up -d` using the [docker-compose.yml](../../docker-compose.yml) in the repository.
+With Compose: `docker compose up -d && docker compose logs -f` using the [docker-compose.yml](../../docker-compose.yml)
+in the repository; `docker compose pull` before it fetches the newest image.
 
 ## Profiles
 

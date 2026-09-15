@@ -69,19 +69,29 @@ Check that containers can see your GPU; the command should print a table with yo
 docker run --rm --gpus all nvidia/cuda:12.8.1-base-ubuntu24.04 nvidia-smi
 ```
 
-**2. Start the server:**
+**2. Start the server and follow its log:**
 
 ```bash
-docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda
+docker run -d --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda && docker logs -f kt-llama
+```
+
+Ctrl+C stops following the log, not the server; `docker logs -f kt-llama` shows it again.
+
+To get the newest version of the image, for example after an update or if you ran it before, remove the old
+container and start it with `--pull always`; without it Docker reuses the image already on your machine. The
+downloaded model files stay in the volume:
+
+```bash
+docker rm -f kt-llama
+docker run -d --pull always --name kt-llama --gpus all -p 8080:8080 -v kt-models:/models ghcr.io/lrozewicz/kt-llama-cpp:cuda && docker logs -f kt-llama
 ```
 
 **3. Wait until it is ready.** The first start downloads about 11 GB (the model and the DFlash2 drafter) into the
-`kt-models` Docker volume; later starts reuse the files. Follow the progress with `docker logs -f kt-llama`; during
-the download it prints a line every 10 seconds, such as
-`[kt] Qwen3.8-27B-KTopt.gguf: 5.83 of 10.30 GB (56%), 10.6 MB/s, about 7 min left`. Ctrl+C stops following the log,
-not the server. The line `[kt] free GPU memory ... -> profile 160k` shows the context size that was chosen. Until the
-server is up, every request to port 8080 gets HTTP 503 with the reason: the download progress, then `Loading model`
-for about 30 seconds. It is ready when this command prints `{"status":"ok"}`:
+`kt-models` Docker volume; later starts reuse the files. During the download the log shows a line every 10 seconds,
+such as `[kt] Qwen3.8-27B-KTopt.gguf: 5.83 of 10.30 GB (56%), 10.6 MB/s, about 7 min left`. The line
+`[kt] free GPU memory ... -> profile 160k` shows the context size that was chosen. Until the server is up, every
+request to port 8080 gets HTTP 503 with the reason: the download progress, then `Loading model` for about 30
+seconds. It is ready when this command prints `{"status":"ok"}`:
 
 ```bash
 curl http://127.0.0.1:8080/health
