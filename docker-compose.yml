@@ -18,7 +18,9 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    command: ["-ctxcp", "16", "--checkpoint-min-step", "2048"]   # extra llama-server args, appended after the profile defaults
     restart: unless-stopped
 
 volumes:
   kt-models:
+    external: true   # pre-existing volume with the model files (create with: docker volume create kt-models)
